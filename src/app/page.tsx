@@ -1,101 +1,307 @@
-import Image from "next/image";
+"use client";
+import { useState, useEffect, useRef } from "react";
+import { PitchDetector } from "pitchy";
+import { motion } from "framer-motion";
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  // State variables
+  const [pitch, setPitch] = useState<number | null>(null);
+  const [isListening, setIsListening] = useState<boolean>(false);
+  const [smoothPitch, setSmoothPitch] = useState<number | null>(null);
+  const [displayedNote, setDisplayedNote] = useState<string>("A");
+  const [gaugeValue, setGaugeValue] = useState<number>(50); // 0 to 100%
+  const [status, setStatus] = useState<string>("Not Good");
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  // Refs
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const dataArrayRef = useRef<Float32Array | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const rafIdRef = useRef<number | null>(null);
+  const targetPitchRef = useRef<number | null>(null);
+  const lastNoteRef = useRef<string>("N/A");
+  const noteUpdateTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  const smoothingDuration = 200; // ms
+
+  // Constants: note names and 4th octave base frequencies
+  const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  const noteFrequencies = [
+    { note: "C", frequency: 261.63 },
+    { note: "C#", frequency: 277.18 },
+    { note: "D", frequency: 293.66 },
+    { note: "D#", frequency: 311.13 },
+    { note: "E", frequency: 329.63 },
+    { note: "F", frequency: 349.23 },
+    { note: "F#", frequency: 369.99 },
+    { note: "G", frequency: 392.0 },
+    { note: "G#", frequency: 415.3 },
+    { note: "A", frequency: 440.0 },
+    { note: "A#", frequency: 466.16 },
+    { note: "B", frequency: 493.88 },
+  ];
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (audioContextRef.current) audioContextRef.current.close();
+      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+    };
+  }, []);
+
+  // Smooth pitch transitions
+  useEffect(() => {
+    if (pitch !== null) {
+      targetPitchRef.current = pitch;
+      if (smoothPitch === null) {
+        setSmoothPitch(pitch);
+      } else {
+        smoothTransition();
+      }
+    }
+  }, [pitch]);
+
+  // Update displayed note, gauge, and status when smoothPitch changes
+  useEffect(() => {
+    if (smoothPitch !== null) {
+      const { note, gauge, status } = getNoteAndCents(smoothPitch);
+      if (note !== lastNoteRef.current) {
+        if (noteUpdateTimeout.current) clearTimeout(noteUpdateTimeout.current);
+        noteUpdateTimeout.current = setTimeout(() => {
+          setDisplayedNote(note);
+          setGaugeValue(gauge);
+          setStatus(status);
+          lastNoteRef.current = note;
+        }, 20);
+      } else {
+        setGaugeValue(gauge);
+        setStatus(status);
+      }
+    }
+  }, [smoothPitch]);
+
+  // Function to smoothly interpolate pitch values
+  const smoothTransition = () => {
+    const start = Date.now();
+    const startPitch = smoothPitch || 0;
+    const targetPitch = targetPitchRef.current || 0;
+    const animate = () => {
+      const elapsed = Date.now() - start;
+      const progress = Math.min(elapsed / smoothingDuration, 1);
+      const interpolatedPitch = startPitch + (targetPitch - startPitch) * progress;
+      setSmoothPitch(interpolatedPitch);
+      if (progress < 1) requestAnimationFrame(animate);
+    };
+    requestAnimationFrame(animate);
+  };
+
+  // Start pitch detection
+  const startPitchDetection = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const audioContext = new (window.AudioContext || window.AudioContext)();
+      audioContextRef.current = audioContext;
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      analyserRef.current = analyser;
+      const source = audioContext.createMediaStreamSource(stream);
+      sourceRef.current = source;
+      source.connect(analyser);
+      const bufferLength = analyser.frequencyBinCount;
+      dataArrayRef.current = new Float32Array(bufferLength);
+      setIsListening(true);
+      detectPitch();
+    } catch (error) {
+      console.error("Error accessing microphone:", error);
+      alert("Error accessing microphone: " + (error as Error).message);
+    }
+  };
+
+  // Stop pitch detection
+  const stopPitchDetection = () => {
+    if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+    if (sourceRef.current) sourceRef.current.disconnect();
+    if (audioContextRef.current) audioContextRef.current.close();
+    setIsListening(false);
+    setPitch(null);
+    setSmoothPitch(null);
+    setDisplayedNote("N/A");
+    setGaugeValue(50);
+    setStatus("Not Good");
+    lastNoteRef.current = "N/A";
+  };
+
+  // Continuously detect pitch
+  const detectPitch = () => {
+    const analyser = analyserRef.current;
+    const dataArray = dataArrayRef.current;
+    if (!analyser || !dataArray) return;
+    analyser.getFloatTimeDomainData(dataArray);
+    let sum = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+      sum += dataArray[i] * dataArray[i];
+    }
+    const rms = Math.sqrt(sum / dataArray.length);
+    const threshold = 0.05;
+    if (rms < threshold) {
+      setPitch(null);
+    } else {
+      const detector = PitchDetector.forFloat32Array(dataArray.length);
+      const inputSampleRate = audioContextRef.current?.sampleRate || 44100;
+      const [detectedPitch, clarity] = detector.findPitch(dataArray, inputSampleRate);
+      if (clarity > 0.9) {
+        setPitch(detectedPitch);
+      } else {
+        setPitch(null);
+      }
+    }
+    rafIdRef.current = requestAnimationFrame(detectPitch);
+  };
+
+  // Compute the closest note, gauge value, and tuning status
+  function getNoteAndCents(frequency: number) {
+    if (frequency <= 0) {
+      return { note: "N/A", gauge: 50, status: "Not Good" };
+    }
+    // Normalize frequency to ~4th octave (250 - 500 Hz)
+    while (frequency < 250) frequency *= 2;
+    while (frequency > 500) frequency /= 2;
+    let closestNote = noteFrequencies[0];
+    let minDiff = Math.abs(frequency - closestNote.frequency);
+    for (let i = 1; i < noteFrequencies.length; i++) {
+      const diff = Math.abs(frequency - noteFrequencies[i].frequency);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestNote = noteFrequencies[i];
+      }
+    }
+    // Calculate the difference in cents:
+    const differenceInCents = 1200 * Math.log2(frequency / closestNote.frequency);
+    // Clamp the difference to ±50 cents
+    const minCents = -50;
+    const maxCents = 50;
+    const clampedCents = Math.max(minCents, Math.min(maxCents, differenceInCents));
+    // Map -50..+50 to 0..100% for gauge (50% means in tune)
+    const percent = ((clampedCents - minCents) / (maxCents - minCents)) * 100;
+    // Determine status based on absolute cents difference
+    let statusText = "Not Good";
+    const absCents = Math.abs(differenceInCents);
+    if (absCents < 5) {
+      statusText = "Perfect";
+    } else if (absCents < 15) {
+      statusText = "Good";
+    }
+    return { note: closestNote.note, gauge: percent, status: statusText };
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center h-screen w-screen bg-gray-900 overflow-hidden">
+      {/* Background Overlays */}
+      <div className="h-5/6 w-full absolute bg-gradient-to-t bottom-0 from-gray-900 z-0" />
+      <div className="h-3/5 w-full absolute -bottom-32 bg-gradient-to-t from-teal-700 z-20" />
+
+      {/* Circular Note Display */}
+      <motion.div
+        className="relative top-[150px]"
+        animate={{
+          rotate: -(180 / 6) * noteNames.indexOf(displayedNote.replace(/\d+/g, "")),
+        }}
+        transition={{ type: "spring", stiffness: 100, damping: 10 }}
+      >
+        <div className="flex items-center justify-center relative">
+          {noteNames.map((note, index) => {
+            const angle = (index / noteNames.length) * 360;
+            const isActive = displayedNote.replace(/\d+/g, "") === note;
+            return (
+              <motion.div
+                key={note}
+                className={`absolute w-12 h-12 flex items-center justify-center 
+                  ${isActive ? "font-bold text-white" : "text-gray-500 text-sm"}
+                `}
+                animate={{
+                  transform: `rotate(${angle - 90}deg) translate(280px) rotate(${90}deg) ${
+                    isActive ? "scale(1.6)" : "scale(1)"
+                  }`,
+                }}
+                transition={{ type: "spring", stiffness: 150, damping: 10 }}
+              >
+                {note}
+              </motion.div>
+            );
+          })}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      </motion.div>
+
+      {/* Main UI */}
+      <div className="z-50 flex flex-col items-center gap-1">
+
+    <div>
+  </div>    
+  
+
+  <motion.div
+    className="absolute w-[200px] h-[200px]  top-1/2"
+    transition={{ type: "spring", stiffness: 150, damping: 10 }}     
+    animate={{y : -200 ,rotate  : (gaugeValue - 50) * 1 }}>
+      <div className="w-16 h-16"
+           style={{  
+            background : 'url(./index.svg)',
+            backgroundRepeat : 'no-repeat',
+            transform : " translateX(70px)"
+            // transformOrigin : 'center buttom'
+            // Ensure the needle's bottom is exactly at the center horizontally
+          }}>
+      </div>
+  </motion.div>
+  
+{isListening?  
+  <p
+    className={`font-bold text-[10px] mt-5 self-center rounded-full pl-2 pr-2 pt-[1px] bg-opacity-20 ${
+      status === "Perfect"
+        ? "text-green-400 bg-green-500"
+        : status === "Good"
+        ? "text-yellow-400 bg-yellow-600"
+        : "text-red-400 bg-red-600 "
+    }`}>
+      {status}
+  </p>
+
+:  <p
+    className="font-bold text-[10px] mt-5 self-center rounded-full pl-2 pr-2 pt-[1px] bg-opacity-20 text-green-400 bg-green-500">
+      Ready
+  </p>
+}
+<br />
+
+  <h1 className="text-4xl font-bold mb-3 text-white text-center">Tuner</h1>
+ 
+  <div className="flex flex-col items-center gap-2 z-40">
+    {!isListening ? (
+      <button
+        onClick={startPitchDetection}
+        className="h-16 w-16 rounded-full bg-blue-600 font-semibold shadow-lg hover:bg-blue-700 transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 text-white"
+      >
+        Start
+      </button>
+    ) : (
+      <button
+        onClick={stopPitchDetection}
+        className="h-16 w-16 rounded-full bg-red-600 text-white font-semibold shadow-lg hover:bg-red-700 transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50"
+      >
+        Stop
+      </button>
+    )}
+    <p className="mt-2 text-center text-2xl text-gray-400">
+      <span className="font-bold text-3xl mb-3">{displayedNote}</span>
+      <br />
+      <span className="font-semibold text-gray-500 text-sm">
+        {smoothPitch ? smoothPitch.toFixed(2) : 0} Hz
+      </span>
+      <br />
+
+    </p>
+  </div>
+      </div>
     </div>
   );
 }
