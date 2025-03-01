@@ -4,15 +4,13 @@ import { PitchDetector } from "pitchy";
 import { motion } from "framer-motion";
 
 export default function Home() {
-  // State variables
   const [pitch, setPitch] = useState<number | null>(null);
   const [isListening, setIsListening] = useState<boolean>(false);
   const [smoothPitch, setSmoothPitch] = useState<number | null>(null);
   const [displayedNote, setDisplayedNote] = useState<string>("A");
-  const [gaugeValue, setGaugeValue] = useState<number>(50); // 0 to 100%
+  const [gaugeValue, setGaugeValue] = useState<number>(50); 
   const [status, setStatus] = useState<string>("Not Good");
 
-  // Refs
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const dataArrayRef = useRef<Float32Array | null>(null);
@@ -22,9 +20,8 @@ export default function Home() {
   const lastNoteRef = useRef<string>("N/A");
   const noteUpdateTimeout = useRef<NodeJS.Timeout | null>(null);
 
-  const smoothingDuration = 200; // ms
+  const smoothingDuration = 200;
 
-  // Constants: note names and 4th octave base frequencies
   const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
   const noteFrequencies = [
     { note: "C", frequency: 261.63 },
@@ -41,7 +38,6 @@ export default function Home() {
     { note: "B", frequency: 493.88 },
   ];
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (audioContextRef.current) audioContextRef.current.close();
@@ -49,7 +45,6 @@ export default function Home() {
     };
   }, []);
 
-  // Smooth pitch transitions
   useEffect(() => {
     if (pitch !== null) {
       targetPitchRef.current = pitch;
@@ -61,7 +56,6 @@ export default function Home() {
     }
   }, [pitch]);
 
-  // Update displayed note, gauge, and status when smoothPitch changes
   useEffect(() => {
     if (smoothPitch !== null) {
       const { note, gauge, status } = getNoteAndCents(smoothPitch);
@@ -80,7 +74,6 @@ export default function Home() {
     }
   }, [smoothPitch]);
 
-  // Function to smoothly interpolate pitch values
   const smoothTransition = () => {
     const start = Date.now();
     const startPitch = smoothPitch || 0;
@@ -95,7 +88,6 @@ export default function Home() {
     requestAnimationFrame(animate);
   };
 
-  // Start pitch detection
   const startPitchDetection = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -117,7 +109,6 @@ export default function Home() {
     }
   };
 
-  // Stop pitch detection
   const stopPitchDetection = () => {
     if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     if (sourceRef.current) sourceRef.current.disconnect();
@@ -125,13 +116,12 @@ export default function Home() {
     setIsListening(false);
     setPitch(null);
     setSmoothPitch(null);
-    setDisplayedNote("N/A");
+    setDisplayedNote("A");
     setGaugeValue(50);
     setStatus("Not Good");
-    lastNoteRef.current = "N/A";
+    lastNoteRef.current = "A";
   };
 
-  // Continuously detect pitch
   const detectPitch = () => {
     const analyser = analyserRef.current;
     const dataArray = dataArrayRef.current;
@@ -158,12 +148,10 @@ export default function Home() {
     rafIdRef.current = requestAnimationFrame(detectPitch);
   };
 
-  // Compute the closest note, gauge value, and tuning status
   function getNoteAndCents(frequency: number) {
     if (frequency <= 0) {
       return { note: "N/A", gauge: 50, status: "Not Good" };
     }
-    // Normalize frequency to ~4th octave (250 - 500 Hz)
     while (frequency < 250) frequency *= 2;
     while (frequency > 500) frequency /= 2;
     let closestNote = noteFrequencies[0];
@@ -175,15 +163,11 @@ export default function Home() {
         closestNote = noteFrequencies[i];
       }
     }
-    // Calculate the difference in cents:
     const differenceInCents = 1200 * Math.log2(frequency / closestNote.frequency);
-    // Clamp the difference to ±50 cents
     const minCents = -50;
     const maxCents = 50;
     const clampedCents = Math.max(minCents, Math.min(maxCents, differenceInCents));
-    // Map -50..+50 to 0..100% for gauge (50% means in tune)
     const percent = ((clampedCents - minCents) / (maxCents - minCents)) * 100;
-    // Determine status based on absolute cents difference
     let statusText = "Not Good";
     const absCents = Math.abs(differenceInCents);
     if (absCents < 5) {
@@ -196,13 +180,23 @@ export default function Home() {
 
   return (
     <div className="flex flex-col items-center justify-center h-screen w-screen bg-gray-900 overflow-hidden">
-      {/* Background Overlays */}
+
+<motion.div
+    className="absolute w-[200px] h-[200px]  top-1/2"
+    transition={{ type: "spring", stiffness: 150, damping: 10 }}     
+    animate={{y : -200 ,rotate  : (gaugeValue - 50) * 1 }}>
+      <div className="w-16 h-16"
+           style={{  
+            background : 'url(./index.svg)',
+            backgroundRepeat : 'no-repeat',
+            transform : " translateX(70px)"
+          }}>
+      </div>
+  </motion.div>
       <div className="h-5/6 w-full absolute bg-gradient-to-t bottom-0 from-gray-900 z-0" />
       <div className="h-3/5 w-full absolute -bottom-32 bg-gradient-to-t from-teal-700 z-20" />
-
-      {/* Circular Note Display */}
       <motion.div
-        className="relative top-[150px]"
+        className="relative top-[120px]"
         animate={{
           rotate: -(180 / 6) * noteNames.indexOf(displayedNote.replace(/\d+/g, "")),
         }}
@@ -232,76 +226,79 @@ export default function Home() {
         </div>
       </motion.div>
 
-      {/* Main UI */}
-      <div className="z-50 flex flex-col items-center gap-1">
+    <div className="z-50 flex flex-col items-center gap-1 ">
+          {isListening?  
+            <p
+              className={`font-bold text-[10px] mt-5 self-center rounded-full pl-2 pr-2 pt-[1px] bg-opacity-20 ${
+                status === "Perfect"
+                  ? "text-green-400 bg-green-500"
+                  : status === "Good"
+                  ? "text-yellow-400 bg-yellow-600"
+                  : "text-red-400 bg-red-600 "
+              }`}>
+                {status}
+            </p>
+          :  <p
+              className="font-bold text-[10px] mt-5 self-center rounded-full pl-2 pr-2 pt-[1px] bg-opacity-20 text-green-400 bg-green-500">
+                Ready
+            </p>
+          }
 
-    <div>
-  </div>    
-  
+          <div className="w-screen h-7  flex justify-center translate-y-[100px]">
+                  <div className="">
 
-  <motion.div
-    className="absolute w-[200px] h-[200px]  top-1/2"
-    transition={{ type: "spring", stiffness: 150, damping: 10 }}     
-    animate={{y : -200 ,rotate  : (gaugeValue - 50) * 1 }}>
-      <div className="w-16 h-16"
-           style={{  
-            background : 'url(./index.svg)',
-            backgroundRepeat : 'no-repeat',
-            transform : " translateX(70px)"
-            // transformOrigin : 'center buttom'
-            // Ensure the needle's bottom is exactly at the center horizontally
-          }}>
-      </div>
-  </motion.div>
-  
-{isListening?  
-  <p
-    className={`font-bold text-[10px] mt-5 self-center rounded-full pl-2 pr-2 pt-[1px] bg-opacity-20 ${
-      status === "Perfect"
-        ? "text-green-400 bg-green-500"
-        : status === "Good"
-        ? "text-yellow-400 bg-yellow-600"
-        : "text-red-400 bg-red-600 "
-    }`}>
-      {status}
-  </p>
+                    {Array.from({ length: 7 }).map((_, i) => {
+                      const angle = 157.7 + (45 / 6) * i
+                      return (
+                        <div
+                        key={i}
+                        className={`absolute bg-white ${i==3? "w-[2px] h-3" : "w-[1px] h-2"} `} 
+                        style={{
+                          transform : `rotate(-${angle}deg) ${i==3 ?"translateY(268px)" : "translateY(260px)" }`, // Moves it outward from the center
+                          transformOrigin : "center bottom", // Ensures rotation happens from the base
+                        }}
+                      />
+                      );
+                    })}            
+                      </div>
+                    </div>
+                  
+                  
+                  
+           <div className="-translate-y-3">
+           <h1 className="text-4xl font-bold mb-3 text-white text-center">Tuner</h1>
+                  
+                  <div className="flex flex-col items-center gap-2 z-40">
+                    {!isListening ? (
+                      <button
+                        onClick={startPitchDetection}
+                        className="h-16 w-16 rounded-full bg-blue-600 font-semibold shadow-lg hover:bg-blue-700 transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 text-white"
+                      >
+                        Start
+                      </button>
+                    ) : (
+                      <button
+                        onClick={stopPitchDetection}
+                        className="h-16 w-16 rounded-full bg-red-600 text-white font-semibold shadow-lg hover:bg-red-700 transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50"
+                      >
+                        Stop
+                      </button>
+                    )}
+                    <p className="mt-2 text-center text-2xl text-gray-400">
+                      <span className="font-bold text-3xl mb-3">{displayedNote}</span>
+                      <br />
+                      <span className="font-semibold text-gray-500 text-sm">
+                        {smoothPitch ? smoothPitch.toFixed(2) : 0} Hz
+                      </span>
+                      <br />
+                  
+                    </p>
+                   </div>
+           </div>
 
-:  <p
-    className="font-bold text-[10px] mt-5 self-center rounded-full pl-2 pr-2 pt-[1px] bg-opacity-20 text-green-400 bg-green-500">
-      Ready
-  </p>
-}
-<br />
-
-  <h1 className="text-4xl font-bold mb-3 text-white text-center">Tuner</h1>
- 
-  <div className="flex flex-col items-center gap-2 z-40">
-    {!isListening ? (
-      <button
-        onClick={startPitchDetection}
-        className="h-16 w-16 rounded-full bg-blue-600 font-semibold shadow-lg hover:bg-blue-700 transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 text-white"
-      >
-        Start
-      </button>
-    ) : (
-      <button
-        onClick={stopPitchDetection}
-        className="h-16 w-16 rounded-full bg-red-600 text-white font-semibold shadow-lg hover:bg-red-700 transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50"
-      >
-        Stop
-      </button>
-    )}
-    <p className="mt-2 text-center text-2xl text-gray-400">
-      <span className="font-bold text-3xl mb-3">{displayedNote}</span>
-      <br />
-      <span className="font-semibold text-gray-500 text-sm">
-        {smoothPitch ? smoothPitch.toFixed(2) : 0} Hz
-      </span>
-      <br />
-
-    </p>
+   
   </div>
-      </div>
-    </div>
+      
+  </div>
   );
 }
