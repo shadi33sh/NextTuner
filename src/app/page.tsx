@@ -2,14 +2,17 @@
 import { useState, useEffect, useRef } from "react"
 import { PitchDetector } from "pitchy"
 import { motion } from "framer-motion"
+import Image from "next/image"
 
 export default function Home() {
   const [pitch, setPitch] = useState<number | null>(null)
   const [isListening, setIsListening] = useState<boolean>(false)
   const [smoothPitch, setSmoothPitch] = useState<number | null>(null)
   const [displayedNote, setDisplayedNote] = useState<string>("A")
-  const [gaugeValue, setGaugeValue] = useState<number>(50) 
+  const [gaugeValue, setGaugeValue] = useState<number>(50)
   const [status, setStatus] = useState<string>("Not Good")
+  const [showSetting,setShowSetting] = useState(false)
+  const [AlpabetForm, setFormat] = useState(true)
 
   const audioContextRef = useRef<AudioContext | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
@@ -22,21 +25,19 @@ export default function Home() {
 
   const smoothingDuration = 200
 
-  const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-  const noteFrequencies = [
-    { note: "C", frequency: 261.63 },
-    { note: "C#", frequency: 277.18 },
-    { note: "D", frequency: 293.66 },
-    { note: "D#", frequency: 311.13 },
-    { note: "E", frequency: 329.63 },
-    { note: "F", frequency: 349.23 },
-    { note: "F#", frequency: 369.99 },
-    { note: "G", frequency: 392.0 },
-    { note: "G#", frequency: 415.3 },
-    { note: "A", frequency: 440.0 },
-    { note: "A#", frequency: 466.16 },
-    { note: "B", frequency: 493.88 },
-  ]
+  const letterNoteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+  const solfegeNoteNames = ["Do", "Do#", "Re", "Re#", "Mi", "Fa", "Fa#", "Sol", "Sol#", "La", "La#", "Si"]
+
+  const panelVariants = {
+    hidden: { opacity: 0, scale: 0, y: -60 , x:-85 },
+    visible: { opacity: 1, scale: 1, y: 0, x:0 ,transition: { duration: 0.3, ease: "easeOut" } },
+  }
+  const noteNames = AlpabetForm ? letterNoteNames : solfegeNoteNames
+
+  const noteFrequencies = letterNoteNames.map((note, i) => ({
+    note,
+    frequency: 261.63 * Math.pow(2, i / 12), // Automatically calculates note frequencies
+  }))
 
   useEffect(() => {
     return () => {
@@ -47,32 +48,35 @@ export default function Home() {
 
   useEffect(() => {
     if (pitch !== null) {
-      targetPitchRef.current = pitch;
+      targetPitchRef.current = pitch
       if (smoothPitch === null) {
-        setSmoothPitch(pitch);
+        setSmoothPitch(pitch)
       } else {
-        smoothTransition();
+        smoothTransition()
       }
     }
-  }, [pitch]);
+  }, [pitch])
 
   useEffect(() => {
     if (smoothPitch !== null) {
       const { note, gauge, status } = getNoteAndCents(smoothPitch)
-      if (note !== lastNoteRef.current) {
+      const noteIndex = letterNoteNames.indexOf(note)
+      const formattedNote = AlpabetForm ? note : solfegeNoteNames[noteIndex] || note
+
+      if (formattedNote !== lastNoteRef.current) {
         if (noteUpdateTimeout.current) clearTimeout(noteUpdateTimeout.current)
         noteUpdateTimeout.current = setTimeout(() => {
-          setDisplayedNote(note)
+          setDisplayedNote(formattedNote)
           setGaugeValue(gauge)
           setStatus(status)
-          lastNoteRef.current = note
-        }, 0)
+          lastNoteRef.current = formattedNote
+        }, 5)
       } else {
         setGaugeValue(gauge)
         setStatus(status)
       }
     }
-  }, [smoothPitch])
+  }, [smoothPitch, AlpabetForm])
 
   const smoothTransition = () => {
     const start = Date.now()
@@ -128,7 +132,7 @@ export default function Home() {
     if (!analyser || !dataArray) return
     analyser.getFloatTimeDomainData(dataArray)
     let sum = 0
-    for (let i = 0 ; i < dataArray.length ;i++) {
+    for (let i = 0; i < dataArray.length; i++) {
       sum += dataArray[i] * dataArray[i]
     }
     const rms = Math.sqrt(sum / dataArray.length)
@@ -149,42 +153,43 @@ export default function Home() {
   }
 
   function getNoteAndCents(frequency: number) {
-    if (frequency <= 0) {
-      return { note: "N/A", gauge: 50, status: "Not Good" }
-    }
+    if (frequency <= 0) return { note: "N/A", gauge: 50, status: "Not Good" }
+
     while (frequency < 250) frequency *= 2
     while (frequency > 500) frequency /= 2
+
     let closestNote = noteFrequencies[0]
     let minDiff = Math.abs(frequency - closestNote.frequency)
-    for (let i = 1 ;i < noteFrequencies.length; i++) {
+    for (let i = 1; i < noteFrequencies.length; i++) {
       const diff = Math.abs(frequency - noteFrequencies[i].frequency)
       if (diff < minDiff) {
         minDiff = diff
         closestNote = noteFrequencies[i]
       }
     }
-    
+
     const differenceInCents = 1200 * Math.log2(frequency / closestNote.frequency)
-    const minCents = -50
-    const maxCents = 50
-    const clampedCents = Math.max(minCents, Math.min(maxCents, differenceInCents))
-    const percent = ((clampedCents - minCents) / (maxCents - minCents)) * 100
+    const clampedCents = Math.max(-50, Math.min(50, differenceInCents))
+    const percent = ((clampedCents + 50) / 100) * 100
+
+    const noteIndex = letterNoteNames.indexOf(closestNote.note)
+    const formattedNote = AlpabetForm ? closestNote.note : solfegeNoteNames[noteIndex] || closestNote.note
+
     let statusText = "Not Good"
-    const absCents = Math.abs(differenceInCents)
-    if (absCents < 5) {
-      statusText = "Perfect"
-    } else if (absCents < 15) {
-      statusText = "Good"
-    }
-    return { note: closestNote.note, gauge: percent, status: statusText }
+    if (Math.abs(differenceInCents) < 5) statusText = "Perfect"
+    else if (Math.abs(differenceInCents) < 15) statusText = "Good"
+
+    return { note: formattedNote, gauge: percent, status: statusText }
   }
 
   return (
     <div className="flex flex-col items-center justify-center h-screen w-screen bg-gray-900 overflow-hidden">
+  
+
 
 <motion.div
     className="absolute w-[200px] h-[200px]  top-1/2"
-    transition={{ type: "spring", stiffness: 150, damping: 10 }}     
+    transition={{ }}     
     animate={{y : -200 ,rotate  : (gaugeValue - 50) * 1 }}>
       <div className="w-16 h-16"
            style={{  
@@ -204,26 +209,25 @@ export default function Home() {
         transition={{ type: "spring", stiffness: 100, damping: 10 }}
       >
         <div className="flex items-center justify-center relative">
-          {noteNames.map((note, index) => {
-            const angle = (index / noteNames.length) * 360
-            const isActive = displayedNote.replace(/\d+/g, "") === note
-            return (
-              <motion.div
-                key={note}
-                className={`absolute w-12 h-12 flex items-center justify-center 
-                  ${isActive ? "font-bold text-white" : "text-gray-500 text-sm"}
-                `}
-                animate={{
-                  transform: `rotate(${angle - 90}deg) translate(280px) rotate(${90}deg) ${
-                    isActive ? "scale(1.6)" : "scale(1)"
-                  }`,
-                }}
-                transition={{ type: "spring", stiffness: 150, damping: 10 }}
-              >
-                {note}
-              </motion.div>
-            )
-          })}
+        {noteNames.map((note, index) => {
+  const angle = (index / noteNames.length) * 360;
+  const isActive = displayedNote.replace(/\d+/g, "") === (AlpabetForm ? letterNoteNames[index] : solfegeNoteNames[index]);
+
+  return (
+    <motion.div
+      key={note}
+      className={`absolute w-12 h-12 flex items-center justify-center 
+        ${isActive ? "font-bold text-white" : "text-gray-500 text-sm"}
+      `}
+      animate={{
+        transform: `rotate(${angle - 90}deg) translate(280px) rotate(${90}deg) ${isActive ? "scale(1.6)" : "scale(1)"}`
+      }}
+      transition={{ type: "spring", stiffness: 150, damping: 10 }}
+    >
+      {note}
+    </motion.div>
+  );
+})}
         </div>
       </motion.div>
 
@@ -295,7 +299,37 @@ export default function Home() {
                    </div>
            </div>
 
-   
+      <motion.button transition={{ type: "spring", stiffness: 100, damping: 10 }} animate={{rotate: showSetting?90:0}} className="fixed top-5 left-5" onClick={() => setShowSetting(!showSetting)}>
+        <Image src={'./setting.svg'} alt="setting" width={25} height={25} />
+      </motion.button>
+
+      <motion.div
+        initial="hidden"
+        animate={showSetting ? "visible" : "hidden"}
+        variants={panelVariants}
+        className="fixed top-14 left-5 w-60 text-white p-4 bg-gray-900  border-2 border-blue-400  rounded-xl shadow-lg flex flex-col gap-2"
+      >
+
+        
+        <button
+          onClick={() => setFormat(true)}
+          className={`py-1 px-3  rounded-xl bg-gray-800 ${AlpabetForm ? "border-2 border-blue-400" : ""}`}
+        >
+          <p className={`text-sm font-bold ${AlpabetForm&&'text-blue-400'}`}>A B C</p>
+        </button>
+
+        <button
+          onClick={() => setFormat(false)}
+          className={`py-1 px-3  rounded-xl bg-gray-800 ${!AlpabetForm ? "border-2 border-blue-400" : ""}`}
+        >
+         <p className={`text-sm font-bold ${!AlpabetForm&&'text-blue-400'}`}> Do Re Mi</p>
+        </button>
+
+      </motion.div>
+
+           <div className="fixed w-screen bottom-0 text-center">
+            <p className="text-[10px] font-light font-sans text-cyan-200 opacity-65">Powerd by Shadi Alatwani</p>
+           </div>
   </div>
       
   </div>
