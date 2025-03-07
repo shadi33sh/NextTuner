@@ -1,28 +1,28 @@
-"use client";
-import { useState, useEffect, useRef } from "react";
-import { PitchDetector } from "pitchy";
-import { motion } from "framer-motion";
+"use client"
+import { useState, useEffect, useRef } from "react"
+import { PitchDetector } from "pitchy"
+import { motion } from "framer-motion"
 
 export default function Home() {
-  const [pitch, setPitch] = useState<number | null>(null);
-  const [isListening, setIsListening] = useState<boolean>(false);
-  const [smoothPitch, setSmoothPitch] = useState<number | null>(null);
-  const [displayedNote, setDisplayedNote] = useState<string>("A");
-  const [gaugeValue, setGaugeValue] = useState<number>(50); 
-  const [status, setStatus] = useState<string>("Not Good");
+  const [pitch, setPitch] = useState<number | null>(null)
+  const [isListening, setIsListening] = useState<boolean>(false)
+  const [smoothPitch, setSmoothPitch] = useState<number | null>(null)
+  const [displayedNote, setDisplayedNote] = useState<string>("A")
+  const [gaugeValue, setGaugeValue] = useState<number>(50) 
+  const [status, setStatus] = useState<string>("Not Good")
 
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const dataArrayRef = useRef<Float32Array | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const rafIdRef = useRef<number | null>(null);
-  const targetPitchRef = useRef<number | null>(null);
-  const lastNoteRef = useRef<string>("N/A");
-  const noteUpdateTimeout = useRef<NodeJS.Timeout | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const dataArrayRef = useRef<Float32Array | null>(null)
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const rafIdRef = useRef<number | null>(null)
+  const targetPitchRef = useRef<number | null>(null)
+  const lastNoteRef = useRef<string>("N/A")
+  const noteUpdateTimeout = useRef<NodeJS.Timeout | null>(null)
 
-  const smoothingDuration = 200;
+  const smoothingDuration = 200
 
-  const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
   const noteFrequencies = [
     { note: "C", frequency: 261.63 },
     { note: "C#", frequency: 277.18 },
@@ -36,14 +36,14 @@ export default function Home() {
     { note: "A", frequency: 440.0 },
     { note: "A#", frequency: 466.16 },
     { note: "B", frequency: 493.88 },
-  ];
+  ]
 
   useEffect(() => {
     return () => {
-      if (audioContextRef.current) audioContextRef.current.close();
-      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
-    };
-  }, []);
+      if (audioContextRef.current) audioContextRef.current.close()
+      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     if (pitch !== null) {
@@ -58,124 +58,125 @@ export default function Home() {
 
   useEffect(() => {
     if (smoothPitch !== null) {
-      const { note, gauge, status } = getNoteAndCents(smoothPitch);
+      const { note, gauge, status } = getNoteAndCents(smoothPitch)
       if (note !== lastNoteRef.current) {
-        if (noteUpdateTimeout.current) clearTimeout(noteUpdateTimeout.current);
+        if (noteUpdateTimeout.current) clearTimeout(noteUpdateTimeout.current)
         noteUpdateTimeout.current = setTimeout(() => {
-          setDisplayedNote(note);
-          setGaugeValue(gauge);
-          setStatus(status);
-          lastNoteRef.current = note;
-        }, 20);
+          setDisplayedNote(note)
+          setGaugeValue(gauge)
+          setStatus(status)
+          lastNoteRef.current = note
+        }, 0)
       } else {
-        setGaugeValue(gauge);
-        setStatus(status);
+        setGaugeValue(gauge)
+        setStatus(status)
       }
     }
-  }, [smoothPitch]);
+  }, [smoothPitch])
 
   const smoothTransition = () => {
-    const start = Date.now();
-    const startPitch = smoothPitch || 0;
-    const targetPitch = targetPitchRef.current || 0;
+    const start = Date.now()
+    const startPitch = smoothPitch || 0
+    const targetPitch = targetPitchRef.current || 0
     const animate = () => {
-      const elapsed = Date.now() - start;
-      const progress = Math.min(elapsed / smoothingDuration, 1);
-      const interpolatedPitch = startPitch + (targetPitch - startPitch) * progress;
-      setSmoothPitch(interpolatedPitch);
-      if (progress < 1) requestAnimationFrame(animate);
-    };
-    requestAnimationFrame(animate);
-  };
+      const elapsed = Date.now() - start
+      const progress = Math.min(elapsed / smoothingDuration, 1)
+      const interpolatedPitch = startPitch + (targetPitch - startPitch) * progress
+      setSmoothPitch(interpolatedPitch)
+      if (progress < 1) requestAnimationFrame(animate)
+    }
+    requestAnimationFrame(animate)
+  }
 
   const startPitchDetection = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const audioContext = new (window.AudioContext || window.AudioContext)();
-      audioContextRef.current = audioContext;
-      const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 2048;
-      analyserRef.current = analyser;
-      const source = audioContext.createMediaStreamSource(stream);
-      sourceRef.current = source;
-      source.connect(analyser);
-      const bufferLength = analyser.frequencyBinCount;
-      dataArrayRef.current = new Float32Array(bufferLength);
-      setIsListening(true);
-      detectPitch();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const audioContext = new (window.AudioContext || window.AudioContext)()
+      audioContextRef.current = audioContext
+      const analyser = audioContext.createAnalyser()
+      analyser.fftSize = 2048
+      analyserRef.current = analyser
+      const source = audioContext.createMediaStreamSource(stream)
+      sourceRef.current = source
+      source.connect(analyser)
+      const bufferLength = analyser.frequencyBinCount
+      dataArrayRef.current = new Float32Array(bufferLength)
+      setIsListening(true)
+      detectPitch()
     } catch (error) {
-      console.error("Error accessing microphone:", error);
-      alert("Error accessing microphone: " + (error as Error).message);
+      console.error("Error accessing microphone:", error)
+      alert("Error accessing microphone: " + (error as Error).message)
     }
-  };
+  }
 
   const stopPitchDetection = () => {
-    if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
-    if (sourceRef.current) sourceRef.current.disconnect();
-    if (audioContextRef.current) audioContextRef.current.close();
-    setIsListening(false);
-    setPitch(null);
-    setSmoothPitch(null);
-    setDisplayedNote("A");
-    setGaugeValue(50);
-    setStatus("Not Good");
-    lastNoteRef.current = "A";
-  };
+    if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current)
+    if (sourceRef.current) sourceRef.current.disconnect()
+    if (audioContextRef.current) audioContextRef.current.close()
+    setIsListening(false)
+    setPitch(null)
+    setSmoothPitch(null)
+    setDisplayedNote("A")
+    setGaugeValue(50)
+    setStatus("Not Good")
+    lastNoteRef.current = "A"
+  }
 
   const detectPitch = () => {
-    const analyser = analyserRef.current;
-    const dataArray = dataArrayRef.current;
-    if (!analyser || !dataArray) return;
-    analyser.getFloatTimeDomainData(dataArray);
-    let sum = 0;
-    for (let i = 0; i < dataArray.length; i++) {
-      sum += dataArray[i] * dataArray[i];
+    const analyser = analyserRef.current
+    const dataArray = dataArrayRef.current
+    if (!analyser || !dataArray) return
+    analyser.getFloatTimeDomainData(dataArray)
+    let sum = 0
+    for (let i = 0 ; i < dataArray.length ;i++) {
+      sum += dataArray[i] * dataArray[i]
     }
-    const rms = Math.sqrt(sum / dataArray.length);
-    const threshold = 0.05;
+    const rms = Math.sqrt(sum / dataArray.length)
+    const threshold = 0.05
     if (rms < threshold) {
-      setPitch(null);
+      setPitch(null)
     } else {
-      const detector = PitchDetector.forFloat32Array(dataArray.length);
-      const inputSampleRate = audioContextRef.current?.sampleRate || 44100;
-      const [detectedPitch, clarity] = detector.findPitch(dataArray, inputSampleRate);
+      const detector = PitchDetector.forFloat32Array(dataArray.length)
+      const inputSampleRate = audioContextRef.current?.sampleRate || 44100
+      const [detectedPitch, clarity] = detector.findPitch(dataArray, inputSampleRate)
       if (clarity > 0.9) {
-        setPitch(detectedPitch);
+        setPitch(detectedPitch)
       } else {
-        setPitch(null);
+        setPitch(null)
       }
     }
-    rafIdRef.current = requestAnimationFrame(detectPitch);
-  };
+    rafIdRef.current = requestAnimationFrame(detectPitch)
+  }
 
   function getNoteAndCents(frequency: number) {
     if (frequency <= 0) {
-      return { note: "N/A", gauge: 50, status: "Not Good" };
+      return { note: "N/A", gauge: 50, status: "Not Good" }
     }
-    while (frequency < 250) frequency *= 2;
-    while (frequency > 500) frequency /= 2;
-    let closestNote = noteFrequencies[0];
-    let minDiff = Math.abs(frequency - closestNote.frequency);
-    for (let i = 1; i < noteFrequencies.length; i++) {
-      const diff = Math.abs(frequency - noteFrequencies[i].frequency);
+    while (frequency < 250) frequency *= 2
+    while (frequency > 500) frequency /= 2
+    let closestNote = noteFrequencies[0]
+    let minDiff = Math.abs(frequency - closestNote.frequency)
+    for (let i = 1 ;i < noteFrequencies.length; i++) {
+      const diff = Math.abs(frequency - noteFrequencies[i].frequency)
       if (diff < minDiff) {
-        minDiff = diff;
-        closestNote = noteFrequencies[i];
+        minDiff = diff
+        closestNote = noteFrequencies[i]
       }
     }
-    const differenceInCents = 1200 * Math.log2(frequency / closestNote.frequency);
-    const minCents = -50;
-    const maxCents = 50;
-    const clampedCents = Math.max(minCents, Math.min(maxCents, differenceInCents));
-    const percent = ((clampedCents - minCents) / (maxCents - minCents)) * 100;
-    let statusText = "Not Good";
-    const absCents = Math.abs(differenceInCents);
+    
+    const differenceInCents = 1200 * Math.log2(frequency / closestNote.frequency)
+    const minCents = -50
+    const maxCents = 50
+    const clampedCents = Math.max(minCents, Math.min(maxCents, differenceInCents))
+    const percent = ((clampedCents - minCents) / (maxCents - minCents)) * 100
+    let statusText = "Not Good"
+    const absCents = Math.abs(differenceInCents)
     if (absCents < 5) {
-      statusText = "Perfect";
+      statusText = "Perfect"
     } else if (absCents < 15) {
-      statusText = "Good";
+      statusText = "Good"
     }
-    return { note: closestNote.note, gauge: percent, status: statusText };
+    return { note: closestNote.note, gauge: percent, status: statusText }
   }
 
   return (
@@ -204,8 +205,8 @@ export default function Home() {
       >
         <div className="flex items-center justify-center relative">
           {noteNames.map((note, index) => {
-            const angle = (index / noteNames.length) * 360;
-            const isActive = displayedNote.replace(/\d+/g, "") === note;
+            const angle = (index / noteNames.length) * 360
+            const isActive = displayedNote.replace(/\d+/g, "") === note
             return (
               <motion.div
                 key={note}
@@ -221,7 +222,7 @@ export default function Home() {
               >
                 {note}
               </motion.div>
-            );
+            )
           })}
         </div>
       </motion.div>
@@ -258,12 +259,10 @@ export default function Home() {
                           transformOrigin : "center bottom", // Ensures rotation happens from the base
                         }}
                       />
-                      );
+                      )
                     })}            
                       </div>
                     </div>
-                  
-                  
                   
            <div className="-translate-y-3">
            <h1 className="text-4xl font-bold mb-3 text-white text-center">Tuner</h1>
@@ -300,5 +299,5 @@ export default function Home() {
   </div>
       
   </div>
-  );
+  )
 }
