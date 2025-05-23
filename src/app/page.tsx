@@ -23,8 +23,8 @@ export default function Home() {
   const lastNoteRef = useRef<string>("N/A")
   const lastStableNoteTime = useRef<number>(Date.now())
 
-  const smoothingDuration = 200
-  const NOTE_STABILITY_DELAY = 300 // ms
+  const smoothingDuration = 600
+  const NOTE_STABILITY_DELAY = 400 // ms
 
   const letterNoteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
   const solfegeNoteNames = ["Do", "Do#", "Re", "Re#", "Mi", "Fa", "Fa#", "Sol", "Sol#", "La", "La#", "Si"]
