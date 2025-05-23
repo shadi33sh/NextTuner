@@ -11,7 +11,7 @@ export default function Home() {
   const [displayedNote, setDisplayedNote] = useState<string>("A")
   const [gaugeValue, setGaugeValue] = useState<number>(50)
   const [status, setStatus] = useState<string>("Not Good")
-  const [showSetting,setShowSetting] = useState(false)
+  const [showSetting, setShowSetting] = useState(false)
   const [AlpabetForm, setFormat] = useState(true)
 
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -21,28 +21,29 @@ export default function Home() {
   const rafIdRef = useRef<number | null>(null)
   const targetPitchRef = useRef<number | null>(null)
   const lastNoteRef = useRef<string>("N/A")
-  const noteUpdateTimeout = useRef<NodeJS.Timeout | null>(null)
+  const lastStableNoteTime = useRef<number>(Date.now())
 
   const smoothingDuration = 200
+  const NOTE_STABILITY_DELAY = 300 // ms
 
   const letterNoteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
   const solfegeNoteNames = ["Do", "Do#", "Re", "Re#", "Mi", "Fa", "Fa#", "Sol", "Sol#", "La", "La#", "Si"]
+  const noteNames = AlpabetForm ? letterNoteNames : solfegeNoteNames
 
   const panelVariants = {
-    hidden: { opacity: 0, scale: 0, y: -60 , x:-85 },
-    visible: { opacity: 1, scale: 1, y: 0, x:0 ,transition: { duration: 0.3, ease: "easeOut" } },
+    hidden: { opacity: 0, scale: 0, y: -60, x: -85 },
+    visible: { opacity: 1, scale: 1, y: 0, x: 0, transition: { duration: 0.3, ease: "easeOut" } },
   }
-  const noteNames = AlpabetForm ? letterNoteNames : solfegeNoteNames
 
   const noteFrequencies = letterNoteNames.map((note, i) => ({
     note,
-    frequency: 261.63 * Math.pow(2, i / 12), // Automatically calculates note frequencies
+    frequency: 261.63 * Math.pow(2, i / 12),
   }))
 
   useEffect(() => {
     return () => {
       if (audioContextRef.current) audioContextRef.current.close()
-      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current)
+      if (rafIdRef.current) clearTimeout(rafIdRef.current)
     }
   }, [])
 
@@ -63,14 +64,15 @@ export default function Home() {
       const noteIndex = letterNoteNames.indexOf(note)
       const formattedNote = AlpabetForm ? note : solfegeNoteNames[noteIndex] || note
 
+      const now = Date.now()
       if (formattedNote !== lastNoteRef.current) {
-        if (noteUpdateTimeout.current) clearTimeout(noteUpdateTimeout.current)
-        noteUpdateTimeout.current = setTimeout(() => {
+        if (now - lastStableNoteTime.current > NOTE_STABILITY_DELAY) {
           setDisplayedNote(formattedNote)
           setGaugeValue(gauge)
           setStatus(status)
           lastNoteRef.current = formattedNote
-        }, 5)
+          lastStableNoteTime.current = now
+        }
       } else {
         setGaugeValue(gauge)
         setStatus(status)
@@ -114,7 +116,7 @@ export default function Home() {
   }
 
   const stopPitchDetection = () => {
-    if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current)
+    if (rafIdRef.current) clearTimeout(rafIdRef.current)
     if (sourceRef.current) sourceRef.current.disconnect()
     if (audioContextRef.current) audioContextRef.current.close()
     setIsListening(false)
@@ -149,12 +151,11 @@ export default function Home() {
         setPitch(null)
       }
     }
-    rafIdRef.current = requestAnimationFrame(detectPitch)
+    rafIdRef.current = window.setTimeout(detectPitch, 50)
   }
 
   function getNoteAndCents(frequency: number) {
     if (frequency <= 0) return { note: "N/A", gauge: 50, status: "Not Good" }
-
     while (frequency < 250) frequency *= 2
     while (frequency > 500) frequency /= 2
 
@@ -181,6 +182,7 @@ export default function Home() {
 
     return { note: formattedNote, gauge: percent, status: statusText }
   }
+
 
   return (
     <div className="flex flex-col items-center justify-center h-screen w-screen bg-gray-900 overflow-hidden">
